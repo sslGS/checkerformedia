@@ -45,40 +45,31 @@ app.post('/upload', upload.single('audioFile'), async (req, res) => {
 
         const { sampleRate, bitsPerSample, container } = metadata.format;
 
-        let errors = [];
+        let result = [];
 
-        if (container !== 'WAVE') {
-            errors.push(`Plik nie jest w formacie WAV.`);
+        if (container === 'WAVE') {
+            result.push(`Plik w formacie WAV.`);
+        } else {
+            result.push(`Plik nie jest w formacie WAV.`);
         }
 
-        if (sampleRate !== 44100) {
-            errors.push(`Niepoprawna częstotliwość: ${sampleRate} Hz (wymagane 44100 Hz).`);
+        if (sampleRate === 44100) {
+            result.push(`Poprawna częstotliwość: ${sampleRate} Hz.`);
+        } else {
+            result.push(`Niepoprawna częstotliwość: ${sampleRate} Hz (wymagane 44100 Hz).`);
         }
 
-        if (bitsPerSample !== 16) {
-            errors.push(`Niepoprawna głębia bitowa: ${bitsPerSample} bit (wymagane 16 bit).`);
+        if (bitsPerSample === 16) {
+            result.push(`Poprawna głębia bitowa: ${bitsPerSample} bit.`);
+        } else {
+            result.push(`Niepoprawna głębia bitowa: ${bitsPerSample} bit (wymagane 16 bit).`);
         }
 
         fs.unlinkSync(filePath); // usuń plik po sprawdzeniu
-
-        if (errors.length > 0) {
-            res.send(`
-                <h3>❌ Plik NIE spełnia wymagań:</h3>
-                <ul>${errors.map(e => `<li>${e}</li>`).join('')}</ul>
-                <a href="/">Wróć</a>
-            `);
-        } else {
-            res.send(`
-                <h3>✅ Plik spełnia wymagania:</h3>
-                <ul>
-                    <li>Format: WAV</li>
-                    <li>Sample Rate: 44.1 kHz</li>
-                    <li>Bit Depth: 16 bit</li>
-                </ul>
-                <a href="/">Sprawdź kolejny plik</a>
-            `);
-        }
-
+        res.send(`
+                <h3>Parametry pliku:</h3>
+                <ul>${result.map(e => `<li>${e}</li>`).join('')}</ul>
+                <a href="/">Wróć</a>`);
     } catch (err) {
         fs.unlinkSync(filePath);
         res.send("Błąd podczas analizy pliku: " + err.message);

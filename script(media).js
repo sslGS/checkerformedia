@@ -1,5 +1,7 @@
 const express = require('express');
 const multer = require('multer');
+const mm = require('sharp');
+const pdfParse = require('pdf-parse');
 const path = require('path');
 const fs = require('fs/promises');
 
@@ -40,20 +42,20 @@ app.post('/upload', upload.single('mediaFile'), async (req, res) => {
     const filePath = path.join(__dirname, req.file.path);
 
     try {
-
+        const metadata = await mm(filePath).metadata();
         let html = '<h3>Parametry pliku:</h3><ul>';
-
-        html += container === 'WAVE'
-            ? '<li>Plik w formacie WAV.</li>'
-            : '<li>Plik nie jest w formacie WAV.</li>';
-
-        html += sampleRate === REQUIRED_SAMPLE_RATE
-            ? `<li>Poprawna częstotliwość: ${sampleRate} Hz.</li>`
-            : `<li>Niepoprawna częstotliwość: ${sampleRate} Hz (wymagane ${REQUIRED_SAMPLE_RATE} Hz).</li>`;
-
-        html += bitsPerSample === REQUIRED_BIT_DEPTH
-            ? `<li>Poprawna głębia bitowa: ${bitsPerSample} bit.</li>`
-            : `<li>Niepoprawna głębia bitowa: ${bitsPerSample} bit (wymagane ${REQUIRED_BIT_DEPTH} bit).</li>`;
+        if(metadata.format === 'jpg' || metadata.format === 'tiff' || metadata.format === 'jpeg' || metadata.format === 'tif') {
+            html += `<li>Plik w formacie ${metadata.format}</li>`;
+            html += `<li> CMYK: ${metadata.space === 'cmyk' ? 'Tak' : 'Nie'}</li>`;
+            html += `<li> Rozdielczość: ${metadata.density === 300 ? '300 DPI' : `błędny DPI (${metadata.density})`}</li>`;
+        } else if(path.extname(req.file.originalname).toLowerCase() === '.pdf') {
+            const dataBuffer = await fs.readFileSync(filePath);
+            const pdfData = await pdfPaserse(dataBuffer);
+            html += `<li>Plik w formacie PDF</li>`;
+            if(pdfData.text && pdfData.text.length > 0) { 
+                html += `<li>Plik prawdopodobnie nie zamieniony na krzywe (zawiera tekst)</li>`;
+            }
+        }
 
         html += '</ul><a href="/">Wróć</a>';
         fs.unlink(filePath);

@@ -10,11 +10,11 @@ const PORT = 3000;
 const upload = multer({
     dest: 'uploads/',
     fileFilter: (req, file, cb) => {
-        const allowedTypes = ['audio/wav', 'audio/x-wav'];
+        const allowedTypes = ['image/jpeg', 'image/tiff', 'application/pdf', 'application/x-photoshop'];
         if (allowedTypes.includes(file.mimetype)) {
             cb(null, true);
         } else {
-            cb(new Error('Dozwolony tylko format WAV'));
+            cb(new Error('Dozwolone tylko formaty: JPG, TIFF, PDF, PSD'));
         }
     }
 });
@@ -40,7 +40,6 @@ app.post('/upload', upload.single('mediaFile'), async (req, res) => {
     const filePath = path.join(__dirname, req.file.path);
 
     try {
-        const metadata = await mm.parseFile(filePath);
 
         let html = '<h3>Parametry pliku:</h3><ul>';
 

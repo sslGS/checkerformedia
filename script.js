@@ -2,10 +2,13 @@ const express = require('express');
 const multer = require('multer');
 const mm = require('music-metadata');
 const path = require('path');
-const fs = require('fs');
+const fs = require('fs/promises');
 
 const app = express();
 const PORT = 3000;
+
+const REQUIRED_SAMPLE_RATE = 44100;
+const REQUIRED_BIT_DEPTH = 16;
 
 // konfiguracja uploadu
 const upload = multer({
@@ -45,33 +48,26 @@ app.post('/upload', upload.single('audioFile'), async (req, res) => {
 
         const { sampleRate, bitsPerSample, container } = metadata.format;
 
-        let result = [];
+        let html = '<h3>Parametry pliku:</h3><ul>';
 
-        if (container === 'WAVE') {
-            result.push(`Plik w formacie WAV.`);
-        } else {
-            result.push(`Plik nie jest w formacie WAV.`);
-        }
+        html += container === 'WAVE'
+            ? '<li>Plik w formacie WAV.</li>'
+            : '<li>Plik nie jest w formacie WAV.</li>';
 
-        if (sampleRate === 44100) {
-            result.push(`Poprawna częstotliwość: ${sampleRate} Hz.`);
-        } else {
-            result.push(`Niepoprawna częstotliwość: ${sampleRate} Hz (wymagane 44100 Hz).`);
-        }
+        html += sampleRate === REQUIRED_SAMPLE_RATE
+            ? `<li>Poprawna częstotliwość: ${sampleRate} Hz.</li>`
+            : `<li>Niepoprawna częstotliwość: ${sampleRate} Hz (wymagane ${REQUIRED_SAMPLE_RATE} Hz).</li>`;
 
-        if (bitsPerSample === 16) {
-            result.push(`Poprawna głębia bitowa: ${bitsPerSample} bit.`);
-        } else {
-            result.push(`Niepoprawna głębia bitowa: ${bitsPerSample} bit (wymagane 16 bit).`);
-        }
+        html += bitsPerSample === REQUIRED_BIT_DEPTH
+            ? `<li>Poprawna głębia bitowa: ${bitsPerSample} bit.</li>`
+            : `<li>Niepoprawna głębia bitowa: ${bitsPerSample} bit (wymagane ${REQUIRED_BIT_DEPTH} bit).</li>`;
 
-        fs.unlinkSync(filePath); // usuń plik po sprawdzeniu
-        res.send(`
-                <h3>Parametry pliku:</h3>
-                <ul>${result.map(e => `<li>${e}</li>`).join('')}</ul>
-                <a href="/">Wróć</a>`);
+        html += '</ul><a href="/">Wróć</a>';
+        fs.unlink(filePath);
+
+        res.type('html').end(html);
     } catch (err) {
-        fs.unlinkSync(filePath);
+        fs.unlink(filePath);
         res.send("Błąd podczas analizy pliku: " + err.message);
     }
 });

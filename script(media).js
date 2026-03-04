@@ -1,14 +1,10 @@
 const express = require('express');
 const multer = require('multer');
-const mm = require('music-metadata');
 const path = require('path');
 const fs = require('fs/promises');
 
 const app = express();
 const PORT = 3000;
-
-const REQUIRED_SAMPLE_RATE = 44100;
-const REQUIRED_BIT_DEPTH = 16;
 
 // konfiguracja uploadu
 const upload = multer({
@@ -26,16 +22,16 @@ const upload = multer({
 // formularz
 app.get('/', (req, res) => {
     res.send(`
-        <h2>Sprawdzanie pliku audio WAV</h2>
+        <h2>Sprawdzanie plików media( jpg, tiff, PDF, PSD)</h2>
         <form action="/upload" method="post" enctype="multipart/form-data">
-            <input type="file" name="audioFile" accept=".wav" required />
+            <input type="file" name="mediaFile" accept=".jpg,.tiff,.pdf,.psd" required />
             <button type="submit">Sprawdź plik</button>
         </form>
     `);
 });
 
 // obsługa uploadu
-app.post('/upload', upload.single('audioFile'), async (req, res) => {
+app.post('/upload', upload.single('mediaFile'), async (req, res) => {
 
     if (!req.file) {
         return res.send("Nie przesłano pliku.");
@@ -46,13 +42,11 @@ app.post('/upload', upload.single('audioFile'), async (req, res) => {
     try {
         const metadata = await mm.parseFile(filePath);
 
-        const { sampleRate, bitsPerSample, container } = metadata.format;
-
         let html = '<h3>Parametry pliku:</h3><ul>';
 
         html += container === 'WAVE'
             ? '<li>Plik w formacie WAV.</li>'
-            : `<li>Plik nie jest w formacie WAV(jest w formacie ${container}).</li>`;
+            : '<li>Plik nie jest w formacie WAV.</li>';
 
         html += sampleRate === REQUIRED_SAMPLE_RATE
             ? `<li>Poprawna częstotliwość: ${sampleRate} Hz.</li>`
@@ -75,5 +69,3 @@ app.post('/upload', upload.single('audioFile'), async (req, res) => {
 app.listen(PORT, () => {
     console.log(`Serwer działa na http://localhost:${PORT}`);
 });
-
-

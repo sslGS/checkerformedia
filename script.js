@@ -43,12 +43,12 @@ app.post('/upload', upload.single('audioFile'), async (req, res) => {
     try {
         const metadata = await mm.parseFile(filePath);
 
-        const { sampleRate, bitsPerSample, formatID } = metadata.format;
+        const { sampleRate, bitsPerSample, container } = metadata.format;
 
         let errors = [];
 
-        if (formatID !== 'WAVE') {
-            errors.push("Plik nie jest w formacie WAV.");
+        if (container !== 'WAVE') {
+            errors.push(`Plik nie jest w formacie WAV.`);
         }
 
         if (sampleRate !== 44100) {

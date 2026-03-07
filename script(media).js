@@ -1,10 +1,10 @@
 const express = require('express');
 const multer = require('multer');
 const mm = require('sharp');
-const pdfParse = require('pdf-parse');
+const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.mjs');
 const path = require('path');
 const fs = require('fs/promises');
-
+const {default: Psd} = require('@webtoon/psd');
 const app = express();
 const PORT = 3000;
 
@@ -12,14 +12,113 @@ const PORT = 3000;
 const upload = multer({
     dest: 'uploads/',
     fileFilter: (req, file, cb) => {
-        const allowedTypes = ['image/jpeg', 'image/tiff', 'application/pdf', 'application/x-photoshop'];
-        if (allowedTypes.includes(file.mimetype)) {
+
+        const allowedMime = [
+            'image/jpeg',
+            'image/tiff',
+            'application/pdf',
+            'application/x-photoshop',
+            'image/vnd.adobe.photoshop',
+            'application/octet-stream'
+        ];
+
+        const allowedExt = ['.jpg', '.jpeg', '.tif', '.tiff', '.pdf', '.psd'];
+
+        const ext = path.extname(file.originalname).toLowerCase();
+
+        if (allowedMime.includes(file.mimetype) || allowedExt.includes(ext)) {
             cb(null, true);
         } else {
             cb(new Error('Dozwolone tylko formaty: JPG, TIFF, PDF, PSD'));
         }
     }
 });
+
+async function analyzePDF(filePath) {
+
+    const data = new Uint8Array(await fs.readFile(filePath));
+    const pdf = await pdfjsLib.getDocument({ data }).promise;
+
+    let hasFonts = false;
+    let hasCMYK = true;
+    let dpiIssues = [];
+
+    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+
+        const page = await pdf.getPage(pageNum);
+        const ops = await page.getOperatorList();
+
+        const { fnArray, argsArray } = ops;
+
+        for (let i = 0; i < fnArray.length; i++) {
+
+            const fn = fnArray[i];
+
+            // font detection
+            if (fn === pdfjsLib.OPS.setFont) {
+                hasFonts = true;
+            }
+
+            // image detection
+            if (
+                fn === pdfjsLib.OPS.paintImageXObject ||
+                fn === pdfjsLib.OPS.paintInlineImageXObject
+            ) {
+
+                const imgName = argsArray[i][0];
+                const img = await page.objs.get(imgName);
+
+                if (img) {
+
+                    // sprawdzanie przestrzeni kolorów
+                    if (img.kind !== 3) {
+                        hasCMYK = false;
+                    }
+
+                    // przybliżony DPI
+                    const {width, height} = img
+
+                    const viewport = page.getViewport({ scale: 1 });
+                    const pageWidthInch = viewport.width / 72;
+
+                    const dpi = width / pageWidthInch;
+
+                    if (dpi < 300) {
+                        dpiIssues.push(Math.round(dpi));
+                    }
+                }
+            }
+        }
+    }
+
+    return {
+        hasFonts,
+        hasCMYK,
+        dpiIssues
+    };
+}
+
+async function analyzePSD(filePath) {
+
+    const buffer = await fs.readFile(filePath);
+
+    // konwersja Buffer -> ArrayBuffer
+    const arrayBuffer = buffer.buffer.slice(
+        buffer.byteOffset,
+        buffer.byteOffset + buffer.byteLength
+    );
+
+    const psd = Psd.parse(arrayBuffer);
+    const { width, height, depth, colorMode} = psd;
+    const isCMYK = colorMode === 4;
+
+    return {
+        width,
+        height,
+        depth,
+        isCMYK
+    };
+}
 
 // formularz
 app.get('/', (req, res) => {
@@ -42,27 +141,60 @@ app.post('/upload', upload.single('mediaFile'), async (req, res) => {
     const filePath = path.join(__dirname, req.file.path);
 
     try {
-        const metadata = await mm(filePath).metadata();
         let html = '<h3>Parametry pliku:</h3><ul>';
-        if(metadata.format === 'jpg' || metadata.format === 'tiff' || metadata.format === 'jpeg' || metadata.format === 'tif') {
+
+        const ext = path.extname(req.file.originalname).toLowerCase();
+
+        if (ext === '.jpg' || ext === '.jpeg' || ext === '.tiff' || ext === '.tif') {
+
+            const metadata = await mm(filePath).metadata();
+
             html += `<li>Plik w formacie ${metadata.format}</li>`;
-            html += `<li> CMYK: ${metadata.space === 'cmyk' ? 'Tak' : 'Nie'}</li>`;
-            html += `<li> Rozdielczość: ${metadata.density === 300 ? '300 DPI' : `błędny DPI (${metadata.density})`}</li>`;
-        } else if(path.extname(req.file.originalname).toLowerCase() === '.pdf') {
-            const dataBuffer = await fs.readFileSync(filePath);
-            const pdfData = await pdfPaserse(dataBuffer);
+            html += `<li>CMYK: ${metadata.space === 'cmyk' ? 'Tak' : 'Nie'}</li>`;
+            html += `<li>Rozdzielczość: ${metadata.density === 300
+                    ? '300 DPI'
+                    : `błędny DPI (${metadata.density || 'brak danych'})`
+                }</li>`;
+        }
+
+        else if (ext === '.pdf') {
+
             html += `<li>Plik w formacie PDF</li>`;
-            if(pdfData.text && pdfData.text.length > 0) { 
-                html += `<li>Plik prawdopodobnie nie zamieniony na krzywe (zawiera tekst)</li>`;
+
+            const pdfInfo = await analyzePDF(filePath);
+
+            html += `<li>Fonty w pliku: ${pdfInfo.hasFonts
+                    ? 'TAK (prawdopodobnie brak krzywych)'
+                    : 'BRAK (fonty zamienione na krzywe)'
+                }</li>`;
+
+            html += `<li>CMYK: ${pdfInfo.hasCMYK ? 'Tak' : 'Nie (RGB wykryty)'}</li>`;
+
+            if (pdfInfo.dpiIssues.length > 0) {
+                html += `<li>Obrazy poniżej 300 DPI: ${pdfInfo.dpiIssues.join(', ')}</li>`;
+            } else {
+                html += `<li>Rozdzielczość obrazów: OK (≥300 DPI)</li>`;
             }
         }
 
+        else if (ext === '.psd') {
+
+            html += `<li>Plik PSD</li>`;
+
+            const psdInfo = await analyzePSD(filePath);
+
+            html += `<li>Wymiary: ${psdInfo.width} × ${psdInfo.height} px</li>`;
+            html += `<li>CMYK: ${psdInfo.isCMYK ? 'Tak' : 'Nie (RGB)'}</li>`;
+            html += `<li>Bit depth: ${psdInfo.depth === 8 ? '8 bit (OK)' : `niepoprawny (${psdInfo.depth})`
+                }</li>`;
+        }
+
         html += '</ul><a href="/">Wróć</a>';
-        fs.unlink(filePath);
+        await fs.unlink(filePath);
 
         res.type('html').end(html);
     } catch (err) {
-        fs.unlink(filePath);
+        await fs.unlink(filePath);
         res.send("Błąd podczas analizy pliku: " + err.message);
     }
 });

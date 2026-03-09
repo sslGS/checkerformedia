@@ -63,11 +63,11 @@ app.post('/upload', upload.single('audioFile'), async (req, res) => {
             : `<li>Niepoprawna głębia bitowa: ${bitsPerSample} bit (wymagane ${REQUIRED_BIT_DEPTH} bit).</li>`;
 
         html += '</ul><a href="/">Wróć</a>';
-        fs.unlink(filePath);
+        await fs.unlink(filePath);
 
         res.type('html').end(html);
     } catch (err) {
-        fs.unlink(filePath);
+        await fs.unlink(filePath);
         res.send("Błąd podczas analizy pliku: " + err.message);
     }
 });
